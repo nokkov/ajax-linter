@@ -7,8 +7,6 @@ import {
   InitializeResult,
 } from "vscode-languageserver/node";
 
-import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver';
-
 import { TextDocument } from "vscode-languageserver-textdocument";
 
 const connection = createConnection(ProposedFeatures.all);
@@ -61,7 +59,6 @@ connection.onCompletion((textDocumentPosition) => {
   const doc = documents.get(textDocumentPosition.textDocument.uri);
   if (!doc) return null;
 
-  const text = doc.getText();
   const pos = textDocumentPosition.position;
   const line = doc.getText({
     start: { line: pos.line, character: 0 },
