@@ -4,26 +4,36 @@ import {
   ProposedFeatures,
   InitializeParams,
   TextDocumentSyncKind,
-  InitializeResult,
+  CompletionItemKind,
+  InsertTextFormat,
+  TextDocumentPositionParams,
+  DiagnosticSeverity
 } from "vscode-languageserver/node";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
 
 const connection = createConnection(ProposedFeatures.all);
-
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
+function isInsideAjaxBlock(textBeforeCursor: string): boolean {
+  const ajaxStart = textBeforeCursor.lastIndexOf("$.ajax({");
+  const blockOpen = textBeforeCursor.lastIndexOf("{", ajaxStart);
+  const blockClose = textBeforeCursor.lastIndexOf("}", ajaxStart);
+  return ajaxStart !== -1 && (blockClose === -1 || blockClose < ajaxStart);
+}
+
+
 connection.onInitialize((params: InitializeParams) => {
-  const result: InitializeResult = {
+  return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       completionProvider: {
         resolveProvider: false,
+        //FIXME
         triggerCharacters: ['.', '/']
       }
     }
   };
-  return result;
 });
 
 interface SwaggerPath {
@@ -51,11 +61,61 @@ const mockSwagger: SwaggerPath = {
   '/api/users': {
     'post': {
       summary: 'Create user'
+    },
+    'get': {
+      summary: 'Get users'
     }
   }
 };
 
-connection.onCompletion((textDocumentPosition) => {
+documents.onDidChangeContent(change => {
+  const doc = change.document;
+  const text = doc.getText();
+
+  const diagnostics = [];
+
+  // Найти все вхождения url: '...'
+  const urlRegex = /url\s*:\s*['"]([^'"]+)['"]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    const url = match[1];
+    const index = match.index;
+
+    if (!mockSwagger[url]) {
+      diagnostics.push({
+        severity: DiagnosticSeverity.Error,
+        range: {
+          start: doc.positionAt(index),
+          end: doc.positionAt(index + match[0].length)
+        },
+        message: `URL "${url}" не найден в спецификации Swagger.`,
+        source: 'mockSwagger'
+      });
+    } else {
+      // Проверка доступных методов для этого URL
+      const methodsMatch = text.match(/type\s*:\s*['"]([^'"]+)['"]/);
+      if (methodsMatch && methodsMatch[1]) {
+        const method = methodsMatch[1].toUpperCase();
+        if (!mockSwagger[url][method.toLowerCase()]) {
+          diagnostics.push({
+            severity: DiagnosticSeverity.Error,
+            range: {
+              start: doc.positionAt(match.index),
+              end: doc.positionAt(match.index + match[0].length)
+            },
+            message: `Метод "${method}" не поддерживается для URL "${url}".`,
+            source: 'mockSwagger'
+          });
+        }
+      }
+    }
+  }
+
+  connection.sendDiagnostics({ uri: doc.uri, diagnostics });
+});
+
+connection.onCompletion((textDocumentPosition: TextDocumentPositionParams) => {
   const doc = documents.get(textDocumentPosition.textDocument.uri);
   if (!doc) return null;
 
@@ -65,50 +125,85 @@ connection.onCompletion((textDocumentPosition) => {
     end: pos
   });
 
-  if (line.includes('$.ajax({')) {
-    return {
-      isIncomplete: false,
-      items: [
-        {
-          label: 'url',
-          kind: 10, 
-          detail: 'string',
-          documentation: 'URL для AJAX-запроса',
-          insertText: 'url: \'${1}\','
-        },
-        {
-          label: 'type',
-          kind: 10,
-          detail: 'string',
-          documentation: 'HTTP метод (GET, POST, etc.)',
-          insertText: 'type: \'${1|GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS,TRACE|}\','
-        },
-      ]
-    };
+  const fullTextBeforeCursor = doc.getText({
+    start: { line: 0, character: 0 },
+    end: pos
+  });
+
+  const urlMatch = fullTextBeforeCursor.match(/url\s*:\s*['"]([^'"]*)['"]?/);
+  const selectedUrl = urlMatch?.[1];
+
+  let items = [];
+
+  // Проверяем, находимся ли мы внутри $.ajax({ ... })
+  if (isInsideAjaxBlock(fullTextBeforeCursor)) {
+    items.push(
+      {
+        label: 'url',
+        kind: CompletionItemKind.Property,
+        detail: 'string',
+        documentation: 'URL для AJAX-запроса',
+        insertText: 'url: \'${1}\',',
+        insertTextFormat: InsertTextFormat.Snippet
+      },
+      {
+        label: 'type',
+        kind: CompletionItemKind.Property,
+        detail: 'string',
+        documentation: 'HTTP метод (GET, POST, etc.)',
+        insertText: 'type: \'${1}\',',
+        insertTextFormat: InsertTextFormat.Snippet
+      }
+    );
   }
 
-  if (line.includes('url: \'')) {
+  // Если курсор находится в строке с url: '...'
+  if (/url\s*:\s*['"][^'"]*$/.test(line)) {
     const urls = Object.keys(mockSwagger);
-    return {
-      isIncomplete: false,
-      items: urls.map(url => {
-        const methods = mockSwagger[url] ? Object.keys(mockSwagger[url]) : [];
-        const firstMethod = methods.length > 0 ? methods[0] : undefined;
-        const summary = firstMethod ? mockSwagger[url][firstMethod]?.summary : undefined;
-        
-        return {
-          label: url,
-          kind: 12, // Value
-          documentation: summary || 'No description',
-          insertText: url
-        };
-      })
-    };
+    items = urls.map(url => {
+      const methods = Object.keys(mockSwagger[url]);
+      const docText = methods
+        .map(m => `${m.toUpperCase()}: ${mockSwagger[url][m]?.summary || 'No description'}`)
+        .join('\n');
+
+      return {
+        label: url,
+        kind: CompletionItemKind.Value,
+        documentation: docText,
+        insertText: url
+      };
+    });
   }
 
-  return null;
-});
+  // Если курсор находится в строке с type: '...'
+  if (/type\s*:\s*['"][^'"]*$/.test(line)) {
+    if (selectedUrl && mockSwagger[selectedUrl]) {
+      const methods = Object.keys(mockSwagger[selectedUrl]);
+      items = methods.map(method => ({
+        label: method.toUpperCase(),
+        kind: CompletionItemKind.Value,
+        documentation: mockSwagger[selectedUrl][method]?.summary || '',
+        insertText: `'${method.toUpperCase()}'`
+      }));
+    } else {
+      const allMethods = new Set<string>();
+      Object.values(mockSwagger).forEach(path => {
+        Object.keys(path).forEach(method => allMethods.add(method.toUpperCase()));
+      });
+      items = Array.from(allMethods).map(method => ({
+        label: method,
+        kind: CompletionItemKind.Value,
+        documentation: '',
+        insertText: `'${method}'`
+      }));
+    }
+  }
 
+  return {
+    isIncomplete: false,
+    items
+  };
+});
 
 
 documents.listen(connection);
