@@ -1,15 +1,15 @@
 {
-  "name": "REPLACE_ME",
-  "description": "REPLACE_ME",
+  "name": "ajax-linter",
+  "description": "ajax-linter",
   "version": "1.0.0",
-  "author": "REPLACE_ME",
+  "author": "nokkov",
   "license": "MIT",
   "engines": {
     "node": "*"
   },
   "repository": {
     "type": "git",
-    "url": "REPLACE_ME"
+    "url": "github.com/nokkov/ajax-linter.git"
   },
   "dependencies": {
     "vscode-languageserver": "^8.1.0",
