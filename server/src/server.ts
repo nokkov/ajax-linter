@@ -22,7 +22,6 @@ function isInsideAjaxBlock(textBeforeCursor: string): boolean {
   return ajaxStart !== -1 && (blockClose === -1 || blockClose < ajaxStart);
 }
 
-
 connection.onInitialize((params: InitializeParams) => {
   return {
     capabilities: {
@@ -36,6 +35,7 @@ connection.onInitialize((params: InitializeParams) => {
   };
 });
 
+//FIXME
 interface SwaggerPath {
   [path: string]: {
     [method: string]: {
@@ -49,6 +49,7 @@ interface SwaggerPath {
   };
 }
 
+//FIXME
 const mockSwagger: SwaggerPath = {
   '/api/data': {
     'get': {
@@ -75,7 +76,7 @@ documents.onDidChangeContent(change => {
   const diagnostics = [];
 
   // Найти все вхождения url: '...'
-  const urlRegex = /url\s*:\s*['"]([^'"]+)['"]/g;
+  const urlRegex = /url:\s*['"]([^'"]+)['"]/g;
   let match: RegExpExecArray | null;
 
   while ((match = urlRegex.exec(text)) !== null) {
@@ -90,11 +91,10 @@ documents.onDidChangeContent(change => {
           end: doc.positionAt(index + match[0].length)
         },
         message: `URL "${url}" не найден в спецификации Swagger.`,
-        source: 'mockSwagger'
+        source: 'mockSwagger' //FIXME
       });
     } else {
-      // Проверка доступных методов для этого URL
-      const methodsMatch = text.match(/type\s*:\s*['"]([^'"]+)['"]/);
+      const methodsMatch = text.match(/type:\s*['"]([^'"]+)['"]/);
       if (methodsMatch && methodsMatch[1]) {
         const method = methodsMatch[1].toUpperCase();
         if (!mockSwagger[url][method.toLowerCase()]) {
@@ -130,7 +130,7 @@ connection.onCompletion((textDocumentPosition: TextDocumentPositionParams) => {
     end: pos
   });
 
-  const urlMatch = fullTextBeforeCursor.match(/url\s*:\s*['"]([^'"]*)['"]?/);
+  const urlMatch = fullTextBeforeCursor.match(/url:\s*['"]([^'"]*)['"]?/);
   const selectedUrl = urlMatch?.[1];
 
   let items = [];
@@ -158,7 +158,7 @@ connection.onCompletion((textDocumentPosition: TextDocumentPositionParams) => {
   }
 
   // Если курсор находится в строке с url: '...'
-  if (/url\s*:\s*['"][^'"]*$/.test(line)) {
+  if (/url:\s*['"][^'"]*$/.test(line)) {
     const urls = Object.keys(mockSwagger);
     items = urls.map(url => {
       const methods = Object.keys(mockSwagger[url]);
@@ -176,7 +176,7 @@ connection.onCompletion((textDocumentPosition: TextDocumentPositionParams) => {
   }
 
   // Если курсор находится в строке с type: '...'
-  if (/type\s*:\s*['"][^'"]*$/.test(line)) {
+  if (/type:\s*['"][^'"]*$/.test(line)) {
     if (selectedUrl && mockSwagger[selectedUrl]) {
       const methods = Object.keys(mockSwagger[selectedUrl]);
       items = methods.map(method => ({
@@ -207,4 +207,3 @@ connection.onCompletion((textDocumentPosition: TextDocumentPositionParams) => {
 
 
 documents.listen(connection);
-connection.listen();
