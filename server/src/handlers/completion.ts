@@ -14,7 +14,6 @@ import {
   getHttpMethodCompletions
 } from '../utils/completionUtils';
 
-//FIXME автокомплит вставляет дополнительные кавычкм
 export function registerCompletion(
   connection: Connection,
   documents: TextDocuments<TextDocument>

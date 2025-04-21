@@ -58,7 +58,7 @@ import { mockSwagger } from '../types/mockSwagger';
         label: method.toUpperCase(),
         kind: CompletionItemKind.Value,
         documentation: mockSwagger[selectedUrl][method]?.summary || '',
-        insertText: `'${method.toUpperCase()}'`
+        insertText: `${method.toUpperCase()}`
       }));
     }
   
