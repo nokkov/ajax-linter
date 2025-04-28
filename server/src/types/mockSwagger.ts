@@ -1,3 +1,4 @@
+//TODO: отревьюить это
 interface SwaggerSchema {
   type?: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
   properties?: { [key: string]: SwaggerSchema };
@@ -6,7 +7,7 @@ interface SwaggerSchema {
   required?: string[];
   $ref?: string;
 }
-
+//TODO: отревьюить это
 interface SwaggerParameter {
   name: string;
   in: 'query' | 'path' | 'body';
@@ -15,7 +16,7 @@ interface SwaggerParameter {
   type?: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
   schema?: SwaggerSchema;
 }
-
+//TODO: отревьюить это
 interface SwaggerMethod {
   summary?: string;
   produces?: string[];
@@ -27,13 +28,13 @@ interface SwaggerMethod {
     };
   };
 }
-
+//TODO: отревьюить это
 export interface SwaggerPath {
   [path: string]: {
     [method: string]: SwaggerMethod;
   };
 }
-
+//TODO: отревьюить это
 export const mockSwagger: SwaggerPath = {
   '/api/users': {
     get: {

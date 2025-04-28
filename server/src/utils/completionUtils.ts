@@ -1,3 +1,9 @@
+/**
+ * Модуль для работы с Swagger-подсказками
+ * @module SwaggerCompletions
+ * @description Содержит функции для автодополнения URL и методов API
+ */
+
 import {
     CompletionItem,
     CompletionItemKind,
@@ -5,13 +11,29 @@ import {
   } from 'vscode-languageserver/node';
   
 import { mockSwagger } from '../types/mockSwagger';
-  
-export function extractUrl(text: string): string | undefined {
+
+/**
+ * Извлекает URL из строки формата url: '/some/url'
+ * @param {string} text - Строка для анализа
+ * @returns {string|undefined} Извлеченный URL или undefined, если не найден
+ * @example
+ * const url = extractUrl('url: "/api/users"'); // возвращает "/api/users"
+ */
+function extractUrl(text: string): string | undefined {
   const match = text.match(/url:\s*['"]([^'"]*)['"]?/);
   return match?.[1];
 }
-  
-export function isInsideAjaxBlock(text: string): boolean {
+ 
+/**
+ * Проверяет, находится ли текущая позиция внутри блока $.ajax({})
+ * @param {string} text - Текст для анализа
+ * @returns {boolean} true если находимся внутри не закрытого блока $.ajax
+ * @example
+ * const inside = isInsideAjaxBlock('$.ajax({ url: "/api" });'); // false
+ * const inside = isInsideAjaxBlock('$.ajax({ url: "/api"'); // true
+ */
+function isInsideAjaxBlock(text: string): boolean {
+  //FIXME а если будет несколько вызовов ajax в одном файле?
   const ajaxIndex = text.lastIndexOf('$.ajax({');
   if (ajaxIndex === -1) return false;
 
@@ -21,72 +43,67 @@ export function isInsideAjaxBlock(text: string): boolean {
 
   return openBraces > closeBraces;
 }
-  
-export function getAjaxPropertyCompletions(): CompletionItem[] {
+
+/**
+ * Возвращает предложения для автодополнения свойств AJAX-запроса
+ * @returns {CompletionItem[]} Массив элементов автодополнения для свойств AJAX
+ * @example
+ * const completions = getAjaxPropertyCompletions();
+ * // возвращает [ { label: 'url', ... }, { label: 'type', ... } ]
+ */
+function getAjaxPropertyCompletions(): CompletionItem[] {
   return [
     {
       label: 'url',
-      kind: CompletionItemKind.Property,
-      detail: 'string',
+      kind: CompletionItemKind.Snippet,
       documentation: 'URL для AJAX-запроса',
-      insertText: 'url: \'${1}\',',
+      insertText: 'url: ${1}',
       insertTextFormat: InsertTextFormat.Snippet
     },
     {
       label: 'type',
-      kind: CompletionItemKind.Property,
-      detail: 'string',
+      kind: CompletionItemKind.Snippet,
       documentation: 'HTTP метод (GET, POST, etc.)',
-      insertText: 'type: \'${1}\',',
+      insertText: 'type: ${1}',
       insertTextFormat: InsertTextFormat.Snippet
     }
   ];
 }
-  
-export function getUrlCompletions(): CompletionItem[] {
+
+/**
+ * Возвращает все URL из mockSwagger в виде элементов автодополнения
+ * @returns {CompletionItem[]} Массив URL для автодополнения
+ * @example
+ * const urls = getUrlCompletions();
+ * // возвращает [ { label: '/api/users', ... }, ... ]
+ */
+function getUrlCompletions(): CompletionItem[] {
   return Object.keys(mockSwagger).map(url => ({
     label: url,
     kind: CompletionItemKind.Value,
-    documentation: getMethodsDoc(url),
     insertText: url
   }));
 }
-  
-export function getHttpMethodCompletions(selectedUrl?: string): CompletionItem[] {
-  if (selectedUrl && mockSwagger[selectedUrl]) {
-    return Object.keys(mockSwagger[selectedUrl]).map(method => ({
-      label: method.toUpperCase(),
-      kind: CompletionItemKind.Value,
-      documentation: mockSwagger[selectedUrl][method]?.summary || '',
-      insertText: `${method.toUpperCase()}`
-    }));
-  }
 
-  return getAllHttpMethods().map(method => ({
-    label: method,
+/**
+ * Возвращает доступные HTTP-методы для указанного URL
+ * @param {string} selectedUrl - URL для которого нужно получить методы
+ * @returns {CompletionItem[]} Массив методов для автодополнения
+ * @example
+ * const methods = getHttpMethodCompletions('/api/users');
+ * // возвращает [ { label: 'GET', ... }, { label: 'POST', ... } ]
+ */
+function getHttpMethodCompletions(selectedUrl: string): CompletionItem[] {
+  const methods = mockSwagger[selectedUrl] ?? {};
+  return Object.keys(methods).map(method => ({
+    label: method.toUpperCase(),
     kind: CompletionItemKind.Value,
-    documentation: '',
-    insertText: `'${method}'`
+    insertText: method.toUpperCase()
   }));
 }
 
-function getMethodsDoc(url: string): string {
-  const methods = Object.keys(mockSwagger[url]);
-  return methods
-    .map(method => `${method.toUpperCase()}: ${mockSwagger[url][method]?.summary || 'No description'}`)
-    .join('\n');
-}
-  
-function getAllHttpMethods(): string[] {
-  const methodSet = new Set<string>();
-  Object.values(mockSwagger).forEach(path =>
-    Object.keys(path).forEach(method => methodSet.add(method.toUpperCase()))
-  );
-  return Array.from(methodSet);
-}
-
-// Функция для сопоставления url с параметрами: /users/{id} или /users/{id}/links
-export function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): string | null {
+//FIXME: отрефакторить
+function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): string | null {
   for (const specUrl of Object.keys(swaggerSpec)) {
     const regexPattern = specUrl
       .replace(/{[^/{}]+}/g, '[^/]+') // заменяет {param} на [^/]+
@@ -100,4 +117,12 @@ export function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, 
   }
   return null;
 }
-  
+
+export {
+  extractUrl,
+  isInsideAjaxBlock,
+  getAjaxPropertyCompletions,
+  getUrlCompletions,
+  getHttpMethodCompletions,
+  findMatchingSwaggerUrl
+};
