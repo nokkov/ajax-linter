@@ -6,6 +6,7 @@ import {
 } from "vscode-languageserver/node";
 
 import { mockSwagger } from "../types/mockSwagger";
+import { findMatchingSwaggerUrl } from "../utils/completionUtils";
 
 export function registerDiagnostics(
   connection: Connection,
@@ -60,20 +61,4 @@ export function registerDiagnostics(
 
     connection.sendDiagnostics({ uri: doc.uri, diagnostics });
   });
-}
-
-// Функция для сопоставления url с параметрами: /users/{id} или /users/{id}/links
-function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): string | null {
-  for (const specUrl of Object.keys(swaggerSpec)) {
-    const regexPattern = specUrl
-      .replace(/{[^/{}]+}/g, '[^/]+') // заменяет {param} на [^/]+
-      .replace(/\//g, '\\/');         // экранирует / для RegExp
-
-    const fullRegex = new RegExp(`^${regexPattern}$`);
-
-    if (fullRegex.test(url)) {
-      return specUrl;
-    }
-  }
-  return null;
 }
