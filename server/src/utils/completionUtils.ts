@@ -7,8 +7,8 @@ import {
 import { mockSwagger } from '../types/mockSwagger';
   
 export function extractUrl(text: string): string | undefined {
-const match = text.match(/url:\s*['"]([^'"]*)['"]?/);
-return match?.[1];
+  const match = text.match(/url:\s*['"]([^'"]*)['"]?/);
+  return match?.[1];
 }
   
 export function isInsideAjaxBlock(text: string): boolean {
