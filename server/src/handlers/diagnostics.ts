@@ -1,7 +1,6 @@
 import {
   Connection,
   DiagnosticSeverity,
-  Range,
   TextDocument,
   TextDocuments,
 } from "vscode-languageserver/node";
@@ -25,7 +24,9 @@ export function registerDiagnostics(
       const url = match[1];
       const index = match.index;
 
-      if (!mockSwagger[url]) {
+      const matchedSwaggerUrl = findMatchingSwaggerUrl(url, mockSwagger);
+
+      if (!matchedSwaggerUrl) {
         diagnostics.push({
           severity: DiagnosticSeverity.Error,
           range: {
@@ -42,14 +43,14 @@ export function registerDiagnostics(
           const method = methodMatch[1].toLowerCase();
           const methodIndex = methodMatch.index;
 
-          if (!mockSwagger[url][method]) {
+          if (!mockSwagger[matchedSwaggerUrl][method]) {
             diagnostics.push({
               severity: DiagnosticSeverity.Error,
               range: {
                 start: doc.positionAt(methodIndex),
                 end: doc.positionAt(methodIndex + methodMatch[0].length)
               },
-              message: `Метод "${method}" не поддерживается для URL "${url}".`,
+              message: `Метод "${method}" не поддерживается для URL "${matchedSwaggerUrl}".`,
               source: 'mockSwagger'
             });
           }
@@ -59,4 +60,20 @@ export function registerDiagnostics(
 
     connection.sendDiagnostics({ uri: doc.uri, diagnostics });
   });
+}
+
+// Функция для сопоставления url с параметрами: /users/{id} или /users/{id}/links
+function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): string | null {
+  for (const specUrl of Object.keys(swaggerSpec)) {
+    const regexPattern = specUrl
+      .replace(/{[^/{}]+}/g, '[^/]+') // заменяет {param} на [^/]+
+      .replace(/\//g, '\\/');         // экранирует / для RegExp
+
+    const fullRegex = new RegExp(`^${regexPattern}$`);
+
+    if (fullRegex.test(url)) {
+      return specUrl;
+    }
+  }
+  return null;
 }
