@@ -14,10 +14,7 @@ import {
   getHttpMethodCompletions
 } from '../utils/completionUtils';
 
-export function registerCompletion(
-  connection: Connection,
-  documents: TextDocuments<TextDocument>
-) {
+function registerCompletion(connection: Connection, documents: TextDocuments<TextDocument>) {
   connection.onCompletion((params: TextDocumentPositionParams) => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
@@ -59,3 +56,5 @@ export function registerCompletion(
     };
   });
 }
+
+export {registerCompletion};

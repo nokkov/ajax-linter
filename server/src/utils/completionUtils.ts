@@ -102,7 +102,7 @@ function getHttpMethodCompletions(selectedUrl: string): CompletionItem[] {
   }));
 }
 
-//FIXME: отрефакторить
+//FIXME: убрать этот костыль
 function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): string | null {
   for (const specUrl of Object.keys(swaggerSpec)) {
     const regexPattern = specUrl

@@ -8,6 +8,7 @@ import {
 import { mockSwagger } from "../types/mockSwagger";
 import { findMatchingSwaggerUrl } from "../utils/completionUtils";
 
+// FIXME отрефакторить
 export function registerDiagnostics(
   connection: Connection,
   documents: TextDocuments<TextDocument>
