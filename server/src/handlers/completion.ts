@@ -11,50 +11,68 @@ import {
   isInsideAjaxBlock,
   getAjaxPropertyCompletions,
   getUrlCompletions,
-  getHttpMethodCompletions
+  getHttpMethodCompletions,
+  getCompletionsByContext
 } from '../utils/completionUtils';
 
+import { parse } from '@babel/parser';
+import traverse from '@babel/traverse';
+
+/**
+ * Регистрирует провайдер автодополнения для AJAX-запросов
+ * @param connection Подключение к LSP-серверу
+ * @param documents Менеджер текстовых документов
+ */
+// FIXME: разделить логику регистрации и автодополнения
+// FIXME: как сделать так, чтобы автокомплит срабатывал автоматически без вызова триггера?
 function registerCompletion(connection: Connection, documents: TextDocuments<TextDocument>) {
-  connection.onCompletion((params: TextDocumentPositionParams) => {
-    const doc = documents.get(params.textDocument.uri);
+  connection.onCompletion(({ textDocument, position }) => {
+    const doc = documents.get(textDocument.uri);
     if (!doc) return null;
+    
+    try {
+      const ast = parse(doc.getText(), {
+        sourceType: 'module',
+        plugins: ['typescript']
+      });
 
-    const pos = params.position;
-    const lineText = doc.getText({
-      start: { line: pos.line, character: 0 },
-      end: pos
-    });
+      let isInAjax = false;
+      let currentProperty = null;
 
-    const fullTextBeforeCursor = doc.getText({
-      start: { line: 0, character: 0 },
-      end: pos
-    });
+      traverse(ast, { 
+        CallExpression(path) {
+          if (
+            path.node.callee.type === 'MemberExpression' &&
+            path.node.callee.property.type === 'Identifier' &&
+            path.node.callee.property.name === 'ajax'
+          ) {
+            isInAjax = true;
+          }
+        },
+        Property(path) {
+          if (!isInAjax) return;
+          if (path.node.key.type === 'Identifier') {
+            currentProperty = path.node.key.name;
+          }
+        }
+      });
 
-    const selectedUrl = extractUrl(fullTextBeforeCursor);
+      if (!isInAjax) return null;
 
-    const items: CompletionItem[] = [];
+      const lineText = doc.getText({
+        start: { line: position.line, character: 0 },
+        end: position
+      });
 
-    // Фильтрация: работаем только внутри $.ajax({})
-    if (isInsideAjaxBlock(fullTextBeforeCursor)) {
-      // Автодополнение для 'url' внутри кавычек
-      if (/url:\s*['"][^'"]*$/.test(lineText)) {
-        items.push(...getUrlCompletions());
-      }
-      // Автодополнение для 'type' внутри кавычек
-      else if (/type:\s*['"][^'"]*$/.test(lineText)) {
-        items.push(...getHttpMethodCompletions(selectedUrl));
-      }
-      // В остальных случаях (url: '', type: '') — показываем общие свойства
-      else {
-        items.push(...getAjaxPropertyCompletions());
-      }
+      return {
+        isIncomplete: false,
+        items: getCompletionsByContext(currentProperty, lineText)
+      };
+
+    } catch {
+      return null; //в случае ошибки парсинга не возвращать сниппеты
     }
-
-    return {
-      isIncomplete: false,
-      items
-    };
-  });
+  })
 }
 
 export {registerCompletion};

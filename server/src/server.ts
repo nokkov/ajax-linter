@@ -13,6 +13,7 @@ import { registerDiagnostics } from "./handlers/diagnostics";
 export const connection = createConnection(ProposedFeatures.all);
 export const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
+//TODO: сделать триггер по положению курсора в документе
 connection.onInitialize((params) => {
   return {
     capabilities: {

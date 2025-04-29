@@ -32,6 +32,7 @@ function extractUrl(text: string): string | undefined {
  * const inside = isInsideAjaxBlock('$.ajax({ url: "/api" });'); // false
  * const inside = isInsideAjaxBlock('$.ajax({ url: "/api"'); // true
  */
+//FIXME избавиться от этой функции
 function isInsideAjaxBlock(text: string): boolean {
   //FIXME а если будет несколько вызовов ajax в одном файле?
   const ajaxIndex = text.lastIndexOf('$.ajax({');
@@ -118,11 +119,23 @@ function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): 
   return null;
 }
 
+function getCompletionsByContext(property: string | null, lineText: string) {
+  if (property === 'url' && /['"][^'"]*$/.test(lineText)) {
+    return getUrlCompletions();
+  }
+  if (property === 'type' && /['"][^'"]*$/.test(lineText)) {
+    //FIXME: здесь нужна обработка методов с параметрами 
+    return getHttpMethodCompletions(selectedUrl ?? '');
+  }
+  return getAjaxPropertyCompletions();
+}
+
 export {
   extractUrl,
   isInsideAjaxBlock,
   getAjaxPropertyCompletions,
   getUrlCompletions,
   getHttpMethodCompletions,
-  findMatchingSwaggerUrl
+  findMatchingSwaggerUrl,
+  getCompletionsByContext
 };

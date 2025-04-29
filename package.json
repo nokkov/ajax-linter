@@ -23,6 +23,9 @@
     "postinstall": "cd client && npm install && cd ../server && npm install && cd .."
   },
   "devDependencies": {
+    "@babel/parser": "^7.27.0",
+    "@babel/traverse": "^7.27.0",
+    "@types/babel__traverse": "^7.20.7",
     "@types/node": "^20.5.7",
     "typescript": "^5.2.2"
   }
