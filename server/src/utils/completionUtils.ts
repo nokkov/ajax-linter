@@ -100,11 +100,11 @@ function getHttpMethodCompletions(selectedUrl: string): CompletionItem[] {
  * const matchingUrl = findMatchingSwaggerUrl(url, swaggerSpec);
  * console.log(matchingUrl); // Выведет: '/api/products/{productId}'
  */
-function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): string | null {
+function findMatchingSwaggerUrl(url: string): string | null {
   const cleanUrl = url.replace(/\/+$/, ''); //удаляем trailing slash
   const urlSegments = cleanUrl.split('/').filter(Boolean); //элегантно удаляем лишние подряд идущие слэши
 
-  for (const specUrl of Object.keys(swaggerSpec)) {
+  for (const specUrl of Object.keys(mockSwagger)) {
     const cleanSpec = specUrl.replace(/\/+$/, '');
     const specSegments = cleanSpec.split('/').filter(Boolean);
 
@@ -153,7 +153,7 @@ function getCompletionsByContext(property: string | null, lineText: string) {
   if (property === 'type' && /['"][^'"]*$/.test(lineText)) {
     const urlMatch = /url:\s*['"]([^'"]+)/.exec(lineText);
     const rawUrl = urlMatch ? urlMatch[1] : '';
-    const swaggerUrl = findMatchingSwaggerUrl(rawUrl, mockSwagger) ?? '';
+    const swaggerUrl = findMatchingSwaggerUrl(rawUrl) ?? '';
     return getHttpMethodCompletions(swaggerUrl);
   }
 

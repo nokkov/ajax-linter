@@ -26,7 +26,7 @@ export function registerDiagnostics(
       const url = match[1];
       const index = match.index;
 
-      const matchedSwaggerUrl = findMatchingSwaggerUrl(url, mockSwagger);
+      const matchedSwaggerUrl = findMatchingSwaggerUrl(url);
 
       if (!matchedSwaggerUrl) {
         diagnostics.push({
