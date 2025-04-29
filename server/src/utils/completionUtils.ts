@@ -103,29 +103,64 @@ function getHttpMethodCompletions(selectedUrl: string): CompletionItem[] {
   }));
 }
 
-//FIXME: убрать этот костыль
+/**
+ * Находит соответствующий URL в спецификации Swagger для заданного URL.
+ * Сравнивает сегменты пути между заданным URL и URL из Swagger спецификации, учитывая параметры пути в формате `{param}`.
+ *
+ * @param {string} url - Заданный URL, который необходимо проверить.
+ * @param {Record<string, any>} swaggerSpec - Спецификация Swagger, в которой хранятся возможные URL-структуры.
+ * @returns {string | null} - Возвращает соответствующий URL из спецификации Swagger, если он найден, или `null`, если соответствие не найдено.
+ *
+ * @example
+ * const swaggerSpec = {
+ *   '/api/products/{productId}': { get: { summary: 'Get product by ID' } },
+ *   '/api/orders/{orderId}': { get: { summary: 'Get order by ID' } }
+ * };
+ *
+ * const url = '/api/products/123';
+ * const matchingUrl = findMatchingSwaggerUrl(url, swaggerSpec);
+ * console.log(matchingUrl); // Выведет: '/api/products/{productId}'
+ */
 function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): string | null {
+  const cleanUrl = url.replace(/\/+$/, ''); //удаляем trailing slash
+  const urlSegments = cleanUrl.split('/').filter(Boolean); //элегантно удаляем лишние подряд идущие слэши
+
   for (const specUrl of Object.keys(swaggerSpec)) {
-    const regexPattern = specUrl
-      .replace(/{[^/{}]+}/g, '[^/]+') // заменяет {param} на [^/]+
-      .replace(/\//g, '\\/');         // экранирует / для RegExp
+    const cleanSpec = specUrl.replace(/\/+$/, '');
+    const specSegments = cleanSpec.split('/').filter(Boolean);
 
-    const fullRegex = new RegExp(`^${regexPattern}$`);
+    if (specSegments.length !== urlSegments.length) continue;
 
-    if (fullRegex.test(url)) {
+    let matched = true;
+    for (let i = 0; i < specSegments.length; i++) {
+      const specSegment = specSegments[i];
+      const urlSegment = urlSegments[i];
+
+      if (specSegment.startsWith('{') && specSegment.endsWith('}')) continue;
+
+      if (specSegment !== urlSegment) {
+        matched = false;
+        break;
+      }
+    }
+
+    if (matched) {
       return specUrl;
     }
   }
+
   return null;
 }
+
 
 function getCompletionsByContext(property: string | null, lineText: string) {
   if (property === 'url' && /['"][^'"]*$/.test(lineText)) {
     return getUrlCompletions();
   }
   if (property === 'type' && /['"][^'"]*$/.test(lineText)) {
-    //FIXME: здесь нужна обработка методов с параметрами 
-    return getHttpMethodCompletions(selectedUrl ?? '');
+    const urlMatch = /url:\s*['"]([^'"]+)/.exec(lineText);
+    const selectedUrl = urlMatch ? urlMatch[1] : '';
+    return getHttpMethodCompletions(selectedUrl);
   }
   return getAjaxPropertyCompletions();
 }
