@@ -1,16 +1,10 @@
 import {
   TextDocuments,
   TextDocument,
-  CompletionItem,
-  TextDocumentPositionParams,
   Connection
 } from 'vscode-languageserver/node';
 
 import {
-  extractUrl,
-  getAjaxPropertyCompletions,
-  getUrlCompletions,
-  getHttpMethodCompletions,
   getCompletionsByContext
 } from '../utils/completionUtils';
 
