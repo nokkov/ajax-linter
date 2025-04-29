@@ -25,27 +25,6 @@ function extractUrl(text: string): string | undefined {
 }
  
 /**
- * Проверяет, находится ли текущая позиция внутри блока $.ajax({})
- * @param {string} text - Текст для анализа
- * @returns {boolean} true если находимся внутри не закрытого блока $.ajax
- * @example
- * const inside = isInsideAjaxBlock('$.ajax({ url: "/api" });'); // false
- * const inside = isInsideAjaxBlock('$.ajax({ url: "/api"'); // true
- */
-//FIXME избавиться от этой функции
-function isInsideAjaxBlock(text: string): boolean {
-  //FIXME а если будет несколько вызовов ajax в одном файле?
-  const ajaxIndex = text.lastIndexOf('$.ajax({');
-  if (ajaxIndex === -1) return false;
-
-  const afterAjax = text.slice(ajaxIndex);
-  const openBraces = (afterAjax.match(/{/g) || []).length;
-  const closeBraces = (afterAjax.match(/}/g) || []).length;
-
-  return openBraces > closeBraces;
-}
-
-/**
  * Возвращает предложения для автодополнения свойств AJAX-запроса
  * @returns {CompletionItem[]} Массив элементов автодополнения для свойств AJAX
  * @example
@@ -183,7 +162,6 @@ function getCompletionsByContext(property: string | null, lineText: string) {
 
 export {
   extractUrl,
-  isInsideAjaxBlock,
   getAjaxPropertyCompletions,
   getUrlCompletions,
   getHttpMethodCompletions,

@@ -8,7 +8,6 @@ import {
 
 import {
   extractUrl,
-  isInsideAjaxBlock,
   getAjaxPropertyCompletions,
   getUrlCompletions,
   getHttpMethodCompletions,
