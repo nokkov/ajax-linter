@@ -74,8 +74,8 @@ function getUrlCompletions(): CompletionItem[] {
  * // возвращает [ { label: 'GET', ... }, { label: 'POST', ... } ]
  */
 function getHttpMethodCompletions(selectedUrl: string): CompletionItem[] {
-  const methods = mockSwagger[selectedUrl] ?? {};
-  return Object.keys(methods).map(method => ({
+  const methods = Object.keys(mockSwagger[selectedUrl] ?? {});
+  return methods.map(method => ({
     label: method.toUpperCase(),
     kind: CompletionItemKind.Value,
     insertText: method.toUpperCase()
