@@ -152,16 +152,32 @@ function findMatchingSwaggerUrl(url: string, swaggerSpec: Record<string, any>): 
   return null;
 }
 
-
+/**
+ * Возвращает список элементов автодополнения на основе текущего контекста свойства внутри объекта $.ajax.
+ *
+ * В зависимости от текущего свойства (`url`, `type` или другое) и текста строки до курсора,
+ * функция определяет, какие подсказки необходимо вернуть:
+ * 
+ * - Для `url`: возвращает список возможных URL из спецификации.
+ * - Для `type`: извлекает текущий URL из строки, определяет шаблон из Swagger (включая параметры),
+ *   и возвращает поддерживаемые HTTP-методы для этого пути.
+ * - Для других свойств: возвращает общие подсказки (`data`, `dataType`, `success`, и т.д.).
+ *
+ * @param {string | null} property - Текущее свойство, внутри которого находится курсор (`url`, `type`, и т.д.).
+ * @param {string} lineText - Текст строки от начала до текущей позиции курсора.
+ * @returns {CompletionItem[]} Список элементов автодополнения, соответствующих текущему контексту.
+ */
 function getCompletionsByContext(property: string | null, lineText: string) {
   if (property === 'url' && /['"][^'"]*$/.test(lineText)) {
     return getUrlCompletions();
   }
   if (property === 'type' && /['"][^'"]*$/.test(lineText)) {
     const urlMatch = /url:\s*['"]([^'"]+)/.exec(lineText);
-    const selectedUrl = urlMatch ? urlMatch[1] : '';
-    return getHttpMethodCompletions(selectedUrl);
+    const rawUrl = urlMatch ? urlMatch[1] : '';
+    const swaggerUrl = findMatchingSwaggerUrl(rawUrl, mockSwagger) ?? '';
+    return getHttpMethodCompletions(swaggerUrl);
   }
+
   return getAjaxPropertyCompletions();
 }
 
