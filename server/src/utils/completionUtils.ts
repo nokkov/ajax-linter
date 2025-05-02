@@ -150,6 +150,7 @@ function getCompletionsByContext(property: string | null, lineText: string) {
   if (property === 'url' && /['"][^'"]*$/.test(lineText)) {
     return getUrlCompletions();
   }
+  //FIXME: здесь передается строка с type: ...; поэтому swagger url не находится
   if (property === 'type' && /['"][^'"]*$/.test(lineText)) {
     const urlMatch = /url:\s*['"]([^'"]+)/.exec(lineText);
     const rawUrl = urlMatch ? urlMatch[1] : '';
