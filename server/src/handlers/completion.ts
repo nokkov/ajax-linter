@@ -12,6 +12,7 @@ import {
 import { parse } from '@babel/parser';
 import traverse, { NodePath } from '@babel/traverse';
 import { Node } from '@babel/types';
+import * as t from '@babel/types';
 
 /**
  * Проверяет, находится ли позиция курсора в пределах данного узла AST.
@@ -54,8 +55,7 @@ function registerCompletion(connection: Connection, documents: TextDocuments<Tex
         plugins: ['typescript']
       });
 
-      let currentProperty: string | null = null;
-      let isInAjaxCall = false;
+      let completions: CompletionList | null = null;
 
       traverse(ast, {
         CallExpression(path) {
@@ -65,48 +65,36 @@ function registerCompletion(connection: Connection, documents: TextDocuments<Tex
             path.node.callee.property.name === 'ajax'
           ) {
             if (isPositionWithin(position, path.node)) {
-              isInAjaxCall = true;
-            }
-          }
-        },
-        Property(path) {
-          if (!isInAjaxCall) return; // Пропускаем, если не в блоке $.ajax
+              const ajaxArgs = path.node.arguments;
+              if (ajaxArgs.length > 0 && ajaxArgs[0].type === 'ObjectExpression') {
+                const properties = ajaxArgs[0].properties;
+                let currentProperty: string | null = null;
+                let rawUrl: string | null = null;
 
-          // Дополнительная проверка, чтобы убедиться, что Property находится внутри CallExpression
-          let parent: NodePath<any> | null = path.parentPath;
-          let insideAjaxCall = false;
-          while (parent) {
-            if (
-              parent.node.type === 'CallExpression' &&
-              (parent.node.callee.type === 'MemberExpression' &&
-                parent.node.callee.property.type === 'Identifier' &&
-                parent.node.callee.property.name === 'ajax')
-            ) {
-              insideAjaxCall = true;
-              break;
-            }
-            parent = parent.parentPath;
-          }
+                for (const prop of properties) {
+                  if (prop.type === 'ObjectProperty' && prop.key.type === 'Identifier') {
+                    if (isPositionWithin(position, prop)) {
+                      currentProperty = prop.key.name;
+                    }
+                    if (prop.key.name === 'url' && prop.value.type === 'StringLiteral') {
+                      rawUrl = prop.value.value;
+                    }
+                  }
+                }
 
-          if (insideAjaxCall && path.node.key.type === 'Identifier') {
-            currentProperty = path.node.key.name;
+                const lineText = doc.getText({
+                  start: { line: position.line, character: 0 },
+                  end: position
+                });
+
+                completions = getCompletionsByContext(currentProperty, lineText, rawUrl);
+              }
+            }
           }
         }
       });
 
-      if (!isInAjaxCall) {
-        return null;
-      }
-
-      const lineText = doc.getText({
-        start: { line: position.line, character: 0 },
-        end: position
-      });
-
-      return {
-        isIncomplete: false,
-        items: getCompletionsByContext(currentProperty, lineText)
-      };
+      return completions;
 
     } catch (e) {
       console.error("Error during AST parsing or traversal:", e);

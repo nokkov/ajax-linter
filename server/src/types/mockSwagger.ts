@@ -1,5 +1,5 @@
 //TODO: отревьюить это
-interface SwaggerSchema {
+export interface SwaggerSchema {
   type?: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
   properties?: { [key: string]: SwaggerSchema };
   items?: SwaggerSchema;
@@ -8,7 +8,7 @@ interface SwaggerSchema {
   $ref?: string;
 }
 //TODO: отревьюить это
-interface SwaggerParameter {
+export interface SwaggerParameter {
   name: string;
   in: 'query' | 'path' | 'body';
   description?: string;
@@ -17,7 +17,7 @@ interface SwaggerParameter {
   schema?: SwaggerSchema;
 }
 //TODO: отревьюить это
-interface SwaggerMethod {
+export interface SwaggerMethod {
   summary?: string;
   produces?: string[];
   parameters?: SwaggerParameter[];

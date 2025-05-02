@@ -7,6 +7,7 @@
 import {
     CompletionItem,
     CompletionItemKind,
+    CompletionList,
     InsertTextFormat
   } from 'vscode-languageserver/node';
   
@@ -146,19 +147,33 @@ function findMatchingSwaggerUrl(url: string): string | null {
  * @param {string} lineText - Текст строки от начала до текущей позиции курсора.
  * @returns {CompletionItem[]} Список элементов автодополнения, соответствующих текущему контексту.
  */
-function getCompletionsByContext(property: string | null, lineText: string) {
+function getCompletionsByContext(property: string | null, lineText: string, rawUrl: string | null = null): CompletionList | null {
   if (property === 'url' && /['"][^'"]*$/.test(lineText)) {
-    return getUrlCompletions();
-  }
-  //FIXME: здесь передается строка с type: ...; поэтому swagger url не находится
-  if (property === 'type' && /['"][^'"]*$/.test(lineText)) {
-    const urlMatch = /url:\s*['"]([^'"]+)/.exec(lineText);
-    const rawUrl = urlMatch ? urlMatch[1] : '';
-    const swaggerUrl = findMatchingSwaggerUrl(rawUrl) ?? '';
-    return getHttpMethodCompletions(swaggerUrl);
+    return {
+      isIncomplete: false,
+      items: getUrlCompletions()
+    };
   }
 
-  return getAjaxPropertyCompletions();
+  if (property === 'type') {
+    // Более точная проверка: убедиться, что строка до курсора *начинается* с чего-то похожего на "type:" и курсор находится в значении
+    if (/\btype\s*:\s*['"]?[^'"]*$/.test(lineText)) {
+      const swaggerUrl = findMatchingSwaggerUrl(rawUrl ?? '') ?? '';
+      return {
+        isIncomplete: false,
+        items: getHttpMethodCompletions(swaggerUrl)
+      };
+    }
+  }
+
+  if (property) {
+      return {
+          isIncomplete: false,
+          items: getAjaxPropertyCompletions()
+      };
+  }
+
+  return null;
 }
 
 export {
