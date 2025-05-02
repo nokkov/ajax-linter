@@ -153,7 +153,7 @@ connection.onCompletion(
 
               if (offset >= start && offset <= end) {
                 // Курсор находится внутри объекта $.ajax
-                completions.push(...getAjaxCompletionItems(configObject, position, document));
+                completions.push(...getAjaxCompletionItems(configObject, textDocumentPosition, document));
               }
             }
           }
@@ -166,9 +166,9 @@ connection.onCompletion(
   }
 );
 
-function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, position: Position, document: TextDocument): CompletionItem[] {
+function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, textDocumentPosition: TextDocumentPositionParams, document: TextDocument): CompletionItem[] {
   const completions: CompletionItem[] = [];
-  const offset = document.offsetAt(position);
+  const offset = document.offsetAt(textDocumentPosition.position);
 
   let currentUrl: string | undefined;
   let currentType: string | undefined;
@@ -227,14 +227,61 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, positi
               const method = mockSwagger[currentUrl]?.[currentType as keyof SwaggerPath];
               if (method) {
                 const bodyParam = method.parameters?.find(param => param.in === 'body');
-                if (bodyParam?.schema) {
-                  const snippet = generateDataSnippet(bodyParam.schema);
-                  return [{
-                    label: 'Заполнить data',
-                    kind: CompletionItemKind.Snippet,
-                    insertText: snippet,
-                    insertTextFormat: InsertTextFormat.Snippet
-                  }];
+                if (bodyParam?.schema?.properties) {
+                  const completionsForData: CompletionItem[] = [];
+                  for (const propName in bodyParam.schema.properties) {
+                    const propSchema = bodyParam.schema.properties[propName];
+                    const isRequired = bodyParam.schema.required?.includes(propName);
+
+                    let insertTextForProp: string;
+                    let detailForProp: string = propSchema.type || '';
+
+                    if (propSchema.type === 'object' && propSchema.properties) {
+                      insertTextForProp = `"${propName}": ${generateDataSnippet(propSchema, 2, true)}`;
+                      detailForProp = 'object';
+                    } else if (propSchema.type === 'array' && propSchema.items) {
+                      insertTextForProp = `"${propName}": [\n\t\t\${1:${getDefaultValue(propSchema.items.type)}}\n\t]`;
+                      detailForProp = 'array';
+                    } else {
+                      insertTextForProp = `"${propName}": \${1:${propSchema.example !== undefined ? JSON.stringify(propSchema.example) : getDefaultValue(propSchema.type)}}`;
+                      detailForProp += isRequired ? ' (обязательное)' : ' (необязательное)';
+                    }
+
+                    const item: CompletionItem = {
+                      label: propName,
+                      kind: CompletionItemKind.Property,
+                      insertText: insertTextForProp,
+                      insertTextFormat: InsertTextFormat.Snippet,
+                      detail: detailForProp
+                    };
+
+                    // Проверяем, был ли триггер точкой
+                    const currentPosition = textDocumentPosition.position;
+                    const rangeBefore = Range.create(
+                      { line: currentPosition.line, character: currentPosition.character - 1 },
+                      currentPosition
+                    );
+                    const charBefore = document.getText(rangeBefore);
+
+                    if (charBefore === '.') {
+                      // Если предыдущий символ был точкой,
+                      // создаем textEdit для замены точки и того, что пользователь мог начать вводить
+                      const replaceRange = Range.create(
+                        { line: currentPosition.line, character: currentPosition.character - 1 },
+                        currentPosition
+                      );
+                      item.textEdit = {
+                        range: replaceRange,
+                        newText: insertTextForProp
+                      };
+                      item.insertText = insertTextForProp;
+                    } else {
+                      item.insertText = insertTextForProp;
+                    }
+
+                    completionsForData.push(item);
+                  }
+                  return completionsForData;
                 }
               }
             }
@@ -260,11 +307,11 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, positi
         let detail: string | undefined;
 
         if (prop === 'url') {
-          insertText += `"$1"`;
+          insertText += `$1`;
           detail = 'URL запроса';
           kind = CompletionItemKind.Snippet;
         } else if (prop === 'type' || prop === 'method') {
-          insertText += `"$1"`;
+          insertText += `$1`;
           detail = 'HTTP метод';
           kind = CompletionItemKind.Snippet;
         } else if (prop === 'data') {
@@ -288,10 +335,10 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, positi
   return completions;
 }
 
-function generateDataSnippet(schema: SwaggerSchema, level: number = 1): string {
+function generateDataSnippet(schema: SwaggerSchema, level: number = 1, includeBraces: boolean = true): string {
   if (schema.type === 'object' && schema.properties) {
     const indent = '  '.repeat(level);
-    let snippet = '{\n';
+    let snippet = includeBraces ? '{\n' : '';
     let i = 1;
     for (const key in schema.properties) {
       const prop = schema.properties[key];
@@ -309,7 +356,7 @@ function generateDataSnippet(schema: SwaggerSchema, level: number = 1): string {
       snippet += `${isRequired ? '' : '?'},\n`;
     }
     snippet = snippet.replace(/,\n$/, '\n'); // Удаляем последнюю запятую
-    snippet += `\n${'  '.repeat(level - 1)}}`;
+    snippet += includeBraces ? `\n${'  '.repeat(level - 1)}}` : '';
     return snippet;
   }
   return getDefaultValue(schema.type);
