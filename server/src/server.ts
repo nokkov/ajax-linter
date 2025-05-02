@@ -11,12 +11,88 @@ import {
   TextDocumentSyncKind,
   InitializeResult,
   Position,
-  Range
+  Range,
+  InsertTextFormat
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as ts from 'typescript';
-import { mockSwagger, SwaggerPath, SwaggerMethod, SwaggerSchema } from './types/mockSwagger';
+
+// Временная заглушка для Swagger спецификации
+interface SwaggerSchema {
+  type: 'object' | 'string' | 'number' | 'boolean' | 'array' | 'integer';
+  properties?: { [key: string]: SwaggerSchema };
+  items?: SwaggerSchema;
+  required?: string[];
+  example?: any;
+}
+
+interface SwaggerMethod {
+  parameters?: Array<{
+    in: 'query' | 'header' | 'path' | 'cookie' | 'body';
+    name: string;
+    required?: boolean;
+    schema?: SwaggerSchema;
+  }>;
+}
+
+interface SwaggerPath {
+  get?: SwaggerMethod;
+  post?: SwaggerMethod;
+  put?: SwaggerMethod;
+  delete?: SwaggerMethod;
+  patch?: SwaggerMethod;
+}
+
+const mockSwagger: { [key: string]: SwaggerPath } = {
+  '/api/users': {
+    get: {
+      parameters: [
+        { in: 'query', name: 'id', schema: { type: 'number', example: 1 } }
+      ]
+    },
+    post: {
+      parameters: [
+        {
+          in: 'body',
+          name: 'user',
+          schema: {
+            type: 'object',
+            properties: {
+              username: { type: 'string', example: 'john_doe' },
+              email: { type: 'string', example: 'john@example.com' },
+              age: { type: 'integer', example: 30 }
+            },
+            required: ['username', 'email']
+          }
+        }
+      ]
+    }
+  },
+  '/api/products': {
+    get: {
+      parameters: [
+        { in: 'query', name: 'search', schema: { type: 'string', example: 'product name' } }
+      ]
+    },
+    put: {
+      parameters: [
+        {
+          in: 'body',
+          name: 'product',
+          schema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', example: 'New Product' },
+              price: { type: 'number', example: 9.99 }
+            },
+            required: ['name', 'price']
+          }
+        }
+      ]
+    }
+  }
+};
 
 const connection = createConnection(ProposedFeatures.all);
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
@@ -108,35 +184,19 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, positi
     }
   }
 
-  // Теперь определяем контекст автодополнения
+  // Определяем, находимся ли мы внутри существующего свойства для автодополнения значений
   for (const prop of configObject.properties) {
     if (ts.isPropertyAssignment(prop)) {
       if (ts.isIdentifier(prop.name)) {
         const propName = prop.name.text;
 
-        // Проверяем, находится ли курсор над ключом свойства или сразу после него
-        const keyStart = document.offsetAt(document.positionAt(prop.name.getStart()));
-        const keyEnd = document.offsetAt(document.positionAt(prop.name.getEnd()));
-
-        if (offset >= keyStart && offset <= keyEnd + 1) {
-          const existingProps = configObject.properties.filter(ts.isPropertyAssignment).map(p => (p.name as ts.Identifier).text);
-          const potentialProps = ['url', 'type', 'method', 'data'];
-          return potentialProps
-            .filter(prop => !existingProps.includes(prop))
-            .map(prop => ({
-              label: prop,
-              kind: CompletionItemKind.Property,
-              detail: prop === 'type' || prop === 'method' ? 'HTTP метод' : undefined
-            }));
-        }
-
-        // Проверяем, находится ли курсор внутри значения свойства (строкового литерала)
+        // Проверяем, находимся ли мы внутри строкового литерала
         if (ts.isStringLiteral(prop.initializer)) {
           const valueStart = document.offsetAt(document.positionAt(prop.initializer.getStart()));
           const valueEnd = document.offsetAt(document.positionAt(prop.initializer.getEnd()));
 
-          // Курсор должен быть внутри кавычек
-          if (offset > valueStart && offset < valueEnd) {
+          // Курсор находится между кавычками (или сразу после открывающей кавычки)
+          if (offset > valueStart && offset <= valueEnd) {
             if (propName === 'url') {
               return Object.keys(mockSwagger).map(url => ({
                 label: url,
@@ -156,24 +216,26 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, positi
             }
           }
         }
-        // Проверяем, находится ли курсор внутри значения свойства (объекта для data)
-        else if (propName === 'data' && ts.isObjectLiteralExpression(prop.initializer)) {
-          const dataObject = prop.initializer;
-          const dataStart = document.offsetAt(document.positionAt(dataObject.getStart()));
-          const dataEnd = document.offsetAt(document.positionAt(dataObject.getEnd()));
+        // Проверяем, находимся ли мы на позиции значения свойства data
+        else if (propName === 'data') {
+          const afterColonOffset = document.offsetAt(document.positionAt(prop.name.getEnd())) + 1;
+          const propEndOffset = document.offsetAt(document.positionAt(prop.getEnd()));
 
-          if (offset >= dataStart && offset <= dataEnd) {
-            if (currentUrl && currentType && mockSwagger[currentUrl] && mockSwagger[currentUrl][currentType]) {
-              const method: SwaggerMethod = mockSwagger[currentUrl][currentType];
-              const bodyParam = method.parameters?.find(param => param.in === 'body');
-              if (bodyParam?.schema) {
-                const snippet = generateDataSnippet(bodyParam.schema);
-                return [{
-                  label: 'Заполнить data',
-                  kind: CompletionItemKind.Snippet,
-                  insertText: snippet,
-                  insertTextFormat: 2 // SnippetString
-                }];
+          // Курсор находится после двоеточия свойства 'data' или внутри потенциального объекта
+          if (offset >= afterColonOffset && offset <= propEndOffset + 1) {
+            if (currentUrl && currentType && ['post', 'put', 'patch'].includes(currentType)) {
+              const method = mockSwagger[currentUrl]?.[currentType as keyof SwaggerPath];
+              if (method) {
+                const bodyParam = method.parameters?.find(param => param.in === 'body');
+                if (bodyParam?.schema) {
+                  const snippet = generateDataSnippet(bodyParam.schema);
+                  return [{
+                    label: 'Заполнить data',
+                    kind: CompletionItemKind.Snippet,
+                    insertText: snippet,
+                    insertTextFormat: InsertTextFormat.Snippet
+                  }];
+                }
               }
             }
           }
@@ -182,20 +244,45 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, positi
     }
   }
 
-  // Если курсор находится внутри объекта конфигурации, но не над существующим свойством,
-  // предлагаем все возможные свойства
+  // Если курсор находится внутри объекта конфигурации, но не внутри значения,
+  // предлагаем доступные свойства с двоеточием и кавычками
   const configObjectStart = document.offsetAt(document.positionAt(configObject.getStart()));
   const configObjectEnd = document.offsetAt(document.positionAt(configObject.getEnd()));
+
   if (offset > configObjectStart && offset < configObjectEnd) {
     const existingProps = configObject.properties.filter(ts.isPropertyAssignment).map(p => (p.name as ts.Identifier).text);
     const potentialProps = ['url', 'type', 'method', 'data'];
     return potentialProps
       .filter(prop => !existingProps.includes(prop))
-      .map(prop => ({
-        label: prop,
-        kind: CompletionItemKind.Property,
-        detail: prop === 'type' || prop === 'method' ? 'HTTP метод' : undefined
-      }));
+      .map(prop => {
+        let insertText = `${prop}: `;
+        let kind: CompletionItemKind;
+        let detail: string | undefined;
+
+        if (prop === 'url') {
+          insertText += `"$1"`;
+          detail = 'URL запроса';
+          kind = CompletionItemKind.Snippet;
+        } else if (prop === 'type' || prop === 'method') {
+          insertText += `"$1"`;
+          detail = 'HTTP метод';
+          kind = CompletionItemKind.Snippet;
+        } else if (prop === 'data') {
+          insertText += `{\n\t$1\n}`;
+          detail = 'Данные запроса (body)';
+          kind = CompletionItemKind.Snippet;
+        } else {
+          kind = CompletionItemKind.Property;
+        }
+
+        return {
+          label: prop,
+          kind: kind,
+          insertText: insertText,
+          insertTextFormat: InsertTextFormat.Snippet,
+          detail: detail
+        };
+      });
   }
 
   return completions;
@@ -323,7 +410,7 @@ function processAjaxConfigForDiagnostics(configObject: ts.ObjectLiteralExpressio
       });
     } else if (typeNode) {
       const type = typeNode.text.toLowerCase();
-      if (!mockSwagger[url][type]) {
+      if (!mockSwagger[url]?.[type as keyof SwaggerPath]) {
         diagnostics.push({
           severity: DiagnosticSeverity.Error,
           range: {
@@ -334,46 +421,49 @@ function processAjaxConfigForDiagnostics(configObject: ts.ObjectLiteralExpressio
           source: 'swagger-lsp'
         });
       } else if (['post', 'put', 'patch'].includes(type) && dataNode) {
-        const method: SwaggerMethod = mockSwagger[url][type];
-        const bodyParam = method.parameters?.find(param => param.in === 'body');
+        const method = mockSwagger[url]?.[type as keyof SwaggerPath];
+        if (method) {
+          const bodyParam = method.parameters?.find(param => param.in === 'body');
 
-        if (bodyParam?.schema?.properties) {
-          const requiredProps = bodyParam.schema.required || [];
-          const dataProperties = dataNode.properties.filter(ts.isPropertyAssignment).map(p => (p.name as ts.Identifier).text);
+          if (bodyParam?.schema?.properties) {
+            const requiredProps = bodyParam.schema.required || [];
+            const dataProperties = dataNode.properties.filter(ts.isPropertyAssignment).map(p => (p.name as ts.Identifier).text);
 
-          for (const requiredProp of requiredProps) {
-            if (!dataProperties.includes(requiredProp)) {
-              const dataRange = {
-                start: textDocument.positionAt(dataNode.getStart()),
-                end: textDocument.positionAt(dataNode.getEnd())
-              };
-              diagnostics.push({
-                severity: DiagnosticSeverity.Error,
-                range: dataRange,
-                message: `Отсутствует обязательное поле '${requiredProp}' в data`,
-                source: 'swagger-lsp'
-              });
+            for (const requiredProp of requiredProps) {
+              if (!dataProperties.includes(requiredProp)) {
+                const dataRange = {
+                  start: textDocument.positionAt(dataNode.getStart()),
+                  end: textDocument.positionAt(dataNode.getEnd())
+                };
+                diagnostics.push({
+                  severity: DiagnosticSeverity.Error,
+                  range: dataRange,
+                  message: `Отсутствует обязательное поле '${requiredProp}' в data`,
+                  source: 'swagger-lsp'
+                });
+              }
             }
-          }
 
-          // Пример очень простой проверки типов
-          for (const prop of dataNode.properties) {
-            if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
-              const propName = prop.name.text;
-              const schemaProp = bodyParam.schema.properties[propName];
-              if (schemaProp) {
-                const propType = getNodeType(prop.initializer);
-                if (schemaProp.type && propType && schemaProp.type !== propType) {
-                  if (!(schemaProp.type === 'integer' && propType === 'number')) { // Allow number for integer
-                    diagnostics.push({
-                      severity: DiagnosticSeverity.Warning,
-                      range: {
-                        start: textDocument.positionAt(prop.initializer.getStart()),
-                        end: textDocument.positionAt(prop.initializer.getEnd())
-                      },
-                      message: `Ожидается тип '${schemaProp.type}' для поля '${propName}', получен '${propType}'`,
-                      source: 'swagger-lsp'
-                    });
+            // Пример очень простой проверки типов
+            for (const prop of dataNode.properties) {
+              if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+                const propName = prop.name.text;
+                const schemaProp = bodyParam.schema.properties[propName];
+                if (schemaProp) {
+                  const propType = getNodeType(prop.initializer);
+                  if (schemaProp.type && propType && schemaProp.type !== propType) {
+                    // Разрешаем 'number' для 'integer'
+                    if (!(schemaProp.type === 'integer' && propType === 'number')) {
+                      diagnostics.push({
+                        severity: DiagnosticSeverity.Warning,
+                        range: {
+                          start: textDocument.positionAt(prop.initializer.getStart()),
+                          end: textDocument.positionAt(prop.initializer.getEnd())
+                        },
+                        message: `Ожидается тип '${schemaProp.type}' для поля '${propName}', получен '${propType}'`,
+                        source: 'swagger-lsp'
+                      });
+                    }
                   }
                 }
               }
