@@ -433,14 +433,12 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, textDo
               if (currentUrl) {
                 // Для автодополнения метода, учитываем пути с параметрами
                 const availableMethods: string[] = [];
-                for (const swaggerUrl in mockSwagger) {
-                  // Проверяем, соответствует ли текущий URL шаблону Swagger URL
-                  if (isUrlMatch(swaggerUrl, currentUrl)) {
-                    const methods = mockSwagger[swaggerUrl];
-                    for (const method in methods) {
-                      if (method !== 'description' && !availableMethods.includes(method.toUpperCase())) {
-                        availableMethods.push(method.toUpperCase());
-                      }
+                const swaggerUrlMatch = getMatchingSwaggerUrl(currentUrl);
+                if (swaggerUrlMatch) {
+                  const methods = mockSwagger[swaggerUrlMatch];
+                  for (const method in methods) {
+                    if (method !== 'description' && !availableMethods.includes(method.toUpperCase())) {
+                      availableMethods.push(method.toUpperCase());
                     }
                   }
                 }
@@ -463,13 +461,7 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, textDo
           if (offset >= afterColonOffset && offset <= propEndOffset + 1) {
             if (currentUrl && currentType && ['post', 'put', 'patch'].includes(currentType)) {
               // Для data, нужно найти подходящий Swagger URL с учетом параметров
-              let swaggerUrlMatch: string | undefined;
-              for (const swaggerUrl in mockSwagger) {
-                if (isUrlMatch(swaggerUrl, currentUrl)) {
-                  swaggerUrlMatch = swaggerUrl;
-                  break;
-                }
-              }
+              const swaggerUrlMatch = getMatchingSwaggerUrl(currentUrl);
 
               if (swaggerUrlMatch) {
                 const method = mockSwagger[swaggerUrlMatch]?.[currentType as keyof SwaggerPath];
@@ -541,7 +533,7 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, textDo
   }
 
   // Если курсор находится внутри объекта конфигурации, но не внутри значения,
-  // предлагаем доступные свойства с двоеточием и кавычками
+  // предлагаем доступные свойства с двоеточием
   const configObjectStart = document.offsetAt(document.positionAt(configObject.getStart()));
   const configObjectEnd = document.offsetAt(document.positionAt(configObject.getEnd()));
 
@@ -556,11 +548,11 @@ function getAjaxCompletionItems(configObject: ts.ObjectLiteralExpression, textDo
         let detail: string | undefined;
 
         if (prop === 'url') {
-          insertText += `\${1:''}`;
+          insertText += `$1`;
           detail = 'URL запроса';
           kind = CompletionItemKind.Snippet;
         } else if (prop === 'type' || prop === 'method') {
-          insertText += `\${1:''}`;
+          insertText += `$1`;
           detail = 'HTTP метод';
           kind = CompletionItemKind.Snippet;
         } else if (prop === 'data') {
@@ -628,25 +620,38 @@ function getDefaultValue(type?: string): string {
   }
 }
 
-// Вспомогательная функция для сопоставления URL с шаблоном Swagger URL
-function isUrlMatch(swaggerUrl: string, currentUrl: string): boolean {
-  const swaggerParts = swaggerUrl.split('/');
-  const currentParts = currentUrl.split('/');
+// Новая функция для получения соответствующего Swagger URL, учитывая параметры пути
+function getMatchingSwaggerUrl(currentUrl: string): string | undefined {
+  const currentParts = currentUrl.split('/').filter(part => part !== '');
+  for (const swaggerUrl in mockSwagger) {
+    const swaggerParts = swaggerUrl.split('/').filter(part => part !== '');
 
-  if (swaggerParts.length !== currentParts.length) {
-    return false;
-  }
-
-  for (let i = 0; i < swaggerParts.length; i++) {
-    if (swaggerParts[i].startsWith('{') && swaggerParts[i].endsWith('}')) {
-      // Это параметр пути, пропускаем проверку
+    if (swaggerParts.length !== currentParts.length) {
       continue;
     }
-    if (swaggerParts[i] !== currentParts[i]) {
-      return false;
+
+    let match = true;
+    for (let i = 0; i < swaggerParts.length; i++) {
+      if (swaggerParts[i].startsWith('{') && swaggerParts[i].endsWith('}')) {
+        // Это параметр пути в Swagger URL, проверяем, что в текущем URL есть что-то на этой позиции
+        if (currentParts[i] === '') {
+          match = false;
+          break;
+        }
+      } else {
+        // Это не параметр, части должны совпадать точно
+        if (swaggerParts[i] !== currentParts[i]) {
+          match = false;
+          break;
+        }
+      }
+    }
+
+    if (match) {
+      return swaggerUrl;
     }
   }
-  return true;
+  return undefined;
 }
 
 connection.onCompletionResolve(
@@ -706,10 +711,26 @@ function processAjaxConfigForDiagnostics(configObject: ts.ObjectLiteralExpressio
   let typeNode: ts.StringLiteral | undefined;
   let dataNode: ts.ObjectLiteralExpression | undefined;
 
+  const encounteredProps = new Set<string>();
+
   for (const prop of configObject.properties) {
     if (ts.isPropertyAssignment(prop)) {
       if (ts.isIdentifier(prop.name)) {
         const propName = prop.name.text;
+
+        if (encounteredProps.has(propName)) {
+          diagnostics.push({
+            severity: DiagnosticSeverity.Error,
+            range: {
+              start: textDocument.positionAt(prop.name.getStart()),
+              end: textDocument.positionAt(prop.name.getEnd())
+            },
+            message: `Дублирующееся свойство: '${propName}'`,
+            source: 'swagger-lsp'
+          });
+        }
+        encounteredProps.add(propName);
+
         if (propName === 'url' && ts.isStringLiteral(prop.initializer)) {
           urlNode = prop.initializer;
         } else if ((propName === 'type' || propName === 'method') && ts.isStringLiteral(prop.initializer)) {
@@ -723,13 +744,7 @@ function processAjaxConfigForDiagnostics(configObject: ts.ObjectLiteralExpressio
 
   if (urlNode) {
     const currentUrl = urlNode.text;
-    let swaggerUrlMatch: string | undefined;
-    for (const swaggerUrl in mockSwagger) {
-      if (isUrlMatch(swaggerUrl, currentUrl)) {
-        swaggerUrlMatch = swaggerUrl;
-        break;
-      }
-    }
+    const swaggerUrlMatch = getMatchingSwaggerUrl(currentUrl);
 
     if (!swaggerUrlMatch) {
       const range = {
@@ -739,7 +754,7 @@ function processAjaxConfigForDiagnostics(configObject: ts.ObjectLiteralExpressio
       diagnostics.push({
         severity: DiagnosticSeverity.Error,
         range: range,
-        message: `Неизвестный URL: ${currentUrl}`,
+        message: `Неизвестный URL или незаполненные параметры пути: ${currentUrl}`,
         source: 'swagger-lsp'
       });
     } else if (typeNode) {
