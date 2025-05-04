@@ -1,6 +1,6 @@
 /**
  * @module server
- * @description Implements a language server for providing autocompletion and diagnostics for jQuery's $.ajax function based on a mock Swagger specification.
+ * @description Универсальный языковой сервер, использующий модули функциональности для предоставления автодополнения и диагностик.
  */
 
 import {
@@ -17,165 +17,152 @@ import {
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as ts from 'typescript';
-import { getAjaxCompletionItems } from './handlers/completion';
-import { processAjaxConfigForDiagnostics } from './handlers/diagnostics';
 
-// Создание соединения для языкового сервера. Используется протокол по возможностям.
+import { FeatureManager } from './features/feature';
+import { AjaxFeature } from './features/ajaxFeature';
+
+// Создание соединения для языкового сервера.
 const connection = createConnection(ProposedFeatures.all);
 
 // Создание менеджера текстовых документов.
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
-/**
- * Обработчик события инициализации языкового сервера.
- * @param {InitializeParams} params - Параметры инициализации.
- * @returns {InitializeResult} Возможности языкового сервера.
- */
+// Создание и регистрация модулей функциональности
+const featureManager = new FeatureManager();
+featureManager.register(new AjaxFeature()); // Регистрация модуля для $.ajax
+
 connection.onInitialize((params: InitializeParams) => {
   const result: InitializeResult = {
-    capabilities: {
-      textDocumentSync: TextDocumentSyncKind.Full,
-      completionProvider: {
-        resolveProvider: true,
-        triggerCharacters: ['.', ':', '\'', '"', '/']
+      capabilities: {
+          textDocumentSync: TextDocumentSyncKind.Full,
+          completionProvider: {
+              resolveProvider: true,
+              triggerCharacters: ['.', ':', '\'', '"', '/']
+          }
       }
-    }
   };
+
   return result;
 });
 
-/**
- * Обработчик события, когда языковой сервер был инициализирован.
- */
 connection.onInitialized(() => {
   connection.console.log('Language server is now running!');
+  connection.console.log(`Registered features: ${featureManager['features'].length}`);
 });
 
+
 /**
- * Обработчик запроса на автодополнение.
- * @param {TextDocumentPositionParams} textDocumentPosition - Параметры позиции текстового документа.
- * @returns {Promise<CompletionItem[]>} Промис, который разрешается в массив элементов автодополнения.
- */
+* Обработчик запроса на автодополнение.
+* Обходит AST и запрашивает автодополнение у всех зарегистрированных модулей ICompletionFeature,
+* которые применимы к текущему узлу и позиции курсора.
+* @param {TextDocumentPositionParams} textDocumentPosition - Параметры позиции текстового документа.
+* @returns {Promise<CompletionItem[]>} Промис, который разрешается в массив элементов автодополнения.
+*/
 connection.onCompletion(
   async (textDocumentPosition: TextDocumentPositionParams): Promise<CompletionItem[]> => {
-    const document = documents.get(textDocumentPosition.textDocument.uri);
-    if (!document) {
-      return [];
-    }
-
-    const position = textDocumentPosition.position;
-    const offset = document.offsetAt(position);
-    const text = document.getText();
-
-    const sourceFile = ts.createSourceFile(
-      textDocumentPosition.textDocument.uri,
-      text,
-      ts.ScriptTarget.Latest,
-      true
-    );
-
-    const completions: CompletionItem[] = [];
-
-    ts.forEachChild(sourceFile, function visit(node) {
-      if (ts.isCallExpression(node)) {
-        const call = node as ts.CallExpression;
-        if (ts.isPropertyAccessExpression(call.expression)) {
-          const propAccess = call.expression as ts.PropertyAccessExpression;
-          if (
-            (ts.isIdentifier(propAccess.expression) &&
-              (propAccess.expression.text === '$' || propAccess.expression.text === 'jQuery')) &&
-            ts.isIdentifier(propAccess.name) &&
-            propAccess.name.text === 'ajax'
-          ) {
-            if (call.arguments.length > 0 && ts.isObjectLiteralExpression(call.arguments[0])) {
-              const configObject = call.arguments[0] as ts.ObjectLiteralExpression;
-
-              const start = document.offsetAt(document.positionAt(configObject.getStart()));
-              const end = document.offsetAt(document.positionAt(configObject.getEnd()));
-
-              if (offset >= start && offset <= end) {
-                // Курсор находится внутри объекта $.ajax
-                completions.push(...getAjaxCompletionItems(configObject, textDocumentPosition, document));
-              }
-            }
-          }
-        }
+      const document = documents.get(textDocumentPosition.textDocument.uri);
+      if (!document) {
+          return [];
       }
-      ts.forEachChild(node, visit);
-    });
 
-    return completions;
+      const text = document.getText();
+      const sourceFile = ts.createSourceFile(
+          textDocumentPosition.textDocument.uri,
+          text,
+          ts.ScriptTarget.Latest,
+          true
+      );
+
+      const allCompletions: CompletionItem[] = [];
+      // Получаем только те модули, которые предоставляют автодополнение
+      const completionFeatures = featureManager.getCompletionFeatures();
+
+      // Рекурсивный обход AST документа
+      ts.forEachChild(sourceFile, function visit(node) {
+          // Для каждого узла в AST, проверяем все модули автодополнения
+          for (const feature of completionFeatures) {
+              // Если модуль "заинтересован" в этом узле (matches вернул true)
+              if (feature.matches(node)) {
+                  // Запрашиваем у модуля элементы автодополнения для этого узла
+                  // Логика проверки позиции курсора относительно узла теперь внутри provideCompletionItems
+                  const nodeCompletions = feature.provideCompletionItems(node, textDocumentPosition, document);
+                  // Добавляем полученные элементы в общий список
+                  allCompletions.push(...nodeCompletions);
+              }
+          }
+          // Продолжаем обход дочерних узлов
+          ts.forEachChild(node, visit);
+      });
+
+      // Возвращаем все собранные элементы автодополнения
+      return allCompletions;
   }
 );
 
-/**
- * Обработчик запроса на разрешение элемента автодополнения.
- * (В данном примере не используется, но может быть расширен для предоставления дополнительной информации).
- * @param {CompletionItem} item - Элемент автодополнения, который нужно разрешить.
- * @returns {CompletionItem} Разрешенный элемент автодополнения.
- */
 connection.onCompletionResolve(
   (item: CompletionItem): CompletionItem => {
-    if (item.data) {
-      // Может быть использовано для дополнительной информации при разрешении
-    }
-    return item;
+      // Здесь может быть логика разрешения для любого зарегистрированного модуля,
+      // использующая item.data для определения, какой модуль должен обрабатывать этот элемент.
+      if (item.data) {
+          // Например: if (item.data.source === 'ajax-feature') { ... resolve ajax data ... }
+      }
+      return item;
   }
 );
 
+
 /**
- * Обработчик изменения содержимого документа.
- * Запускает валидацию документа.
- */
+* Обработчик изменения содержимого документа.
+* Запускает валидацию документа.
+*/
 documents.onDidChangeContent(change => {
   validateTextDocument(change.document);
 });
 
 /**
- * Обработчик открытия документа.
- * Запускает валидацию документа.
- */
+* Обработчик открытия документа.
+* Запускает валидацию документа.
+*/
 documents.onDidOpen(open => {
   validateTextDocument(open.document);
 });
 
 /**
- * Выполняет валидацию текстового документа и отправляет диагностические сообщения.
- * @param {TextDocument} textDocument - Текстовый документ для валидации.
- */
+* Выполняет валидацию текстового документа.
+* Обходит AST и запрашивает диагностики у всех зарегистрированных модулей IDiagnosticFeature,
+* которые применимы к текущему узлу.
+* @param {TextDocument} textDocument - Текстовый документ для валидации.
+*/
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
   const text = textDocument.getText();
-  const diagnostics: Diagnostic[] = [];
+  const diagnostics: Diagnostic[] = []; // Массив для сбора всех диагностик от всех модулей
 
   const sourceFile = ts.createSourceFile(
-    textDocument.uri,
-    text,
-    ts.ScriptTarget.Latest,
-    true
+      textDocument.uri,
+      text,
+      ts.ScriptTarget.Latest,
+      true
   );
 
+  // Получаем только те модули, которые предоставляют диагностики
+  const diagnosticFeatures = featureManager.getDiagnosticFeatures();
+
+  // Рекурсивный обход AST документа
   ts.forEachChild(sourceFile, function visit(node) {
-    if (ts.isCallExpression(node)) {
-      const call = node as ts.CallExpression;
-      if (ts.isPropertyAccessExpression(call.expression)) {
-        const propAccess = call.expression as ts.PropertyAccessExpression;
-        if (
-          (ts.isIdentifier(propAccess.expression) &&
-            (propAccess.expression.text === '$' || propAccess.expression.text === 'jQuery')) &&
-          ts.isIdentifier(propAccess.name) &&
-          propAccess.name.text === 'ajax'
-        ) {
-          if (call.arguments.length > 0 && ts.isObjectLiteralExpression(call.arguments[0])) {
-            const configObject = call.arguments[0] as ts.ObjectLiteralExpression;
-            processAjaxConfigForDiagnostics(configObject, textDocument, diagnostics);
+      // Для каждого узла в AST, проверяем все модули диагностик
+      for (const feature of diagnosticFeatures) {
+          // Если модуль "заинтересован" в этом узле (matches вернул true)
+          if (feature.matches(node)) {
+              // Запрашиваем у модуля диагностики для этого узла
+              // Модуль сам добавит диагностики в переданный массив `diagnostics`
+              feature.provideDiagnostics(node, textDocument, diagnostics);
           }
-        }
       }
-    }
-    ts.forEachChild(node, visit);
+      // Продолжаем обход дочерних узлов
+      ts.forEachChild(node, visit);
   });
 
-  // Отправка диагностических сообщений клиенту
+  // Отправка всех собранных диагностических сообщений клиенту
   connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
 }
 
@@ -183,4 +170,4 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 documents.listen(connection);
 
 // Прослушивание входящих сообщений от клиента.
-connection.listen();
+connection.listen(); // Запуск цикла сервера
