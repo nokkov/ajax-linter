@@ -205,8 +205,6 @@ export class AjaxFeature implements ICompletionFeature, IDiagnosticFeature {
             }
         }
 
-        // Если курсор находится внутри объекта конфигурации, но не внутри значения,
-        // предлагаем доступные свойства с двоеточием
         const configObjectStart = document.offsetAt(document.positionAt(configObject.getStart()));
         const configObjectEnd = document.offsetAt(document.positionAt(configObject.getEnd()));
 
@@ -266,9 +264,7 @@ export class AjaxFeature implements ICompletionFeature, IDiagnosticFeature {
      * @param diagnostics Массив, в который должны быть добавлены диагностики.
      */
     provideDiagnostics(node: ts.Node, textDocument: TextDocument, diagnostics: Diagnostic[]): void {
-         // Поскольку matches(node) уже вернул true, мы знаем, что node - это CallExpression
         const call = node as ts.CallExpression;
-        // И что первый аргумент - это ObjectLiteralExpression
         const configObject = call.arguments[0] as ts.ObjectLiteralExpression;
 
         let urlNode: ts.StringLiteral | undefined;

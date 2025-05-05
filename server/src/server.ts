@@ -101,11 +101,6 @@ connection.onCompletion(
 
 connection.onCompletionResolve(
   (item: CompletionItem): CompletionItem => {
-      // Здесь может быть логика разрешения для любого зарегистрированного модуля,
-      // использующая item.data для определения, какой модуль должен обрабатывать этот элемент.
-      if (item.data) {
-          // Например: if (item.data.source === 'ajax-feature') { ... resolve ajax data ... }
-      }
       return item;
   }
 );
