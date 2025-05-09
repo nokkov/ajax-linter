@@ -13,6 +13,14 @@ export interface ILanguageServerFeature {
      * @returns true, если модуль применим к узлу, иначе false.
      */
     matches(node: ts.Node): boolean;
+
+    /**
+     * Возвращает массив типов узлов AST (ts.SyntaxKind), 
+     * к которым потенциально применим данный модуль.
+     * Используется для предварительной фильтрации перед вызовом matches().
+     * @returns Массив типов узлов (ts.SyntaxKind).
+     */
+    getSupportedNodeTypes(): ts.SyntaxKind[];
 }
 
 /**
@@ -34,7 +42,7 @@ export interface ICompletionFeature extends ILanguageServerFeature {
  * Интерфейс для модулей, способных предоставлять диагностические сообщения.
  */
 export interface IDiagnosticFeature extends ILanguageServerFeature {
-     /**
+    /**
      * Добавляет диагностические сообщения для узла в массив диагностик, если matches(node) вернул true.
      * Ядро сервера вызывает этот метод в процессе валидации документа.
      * @param node Узел AST, к которому применим модуль.
@@ -56,6 +64,10 @@ export type LanguageServerFeature = ICompletionFeature | IDiagnosticFeature;
  */
 export class FeatureManager {
     private features: LanguageServerFeature[] = [];
+    
+    // Кэши для оптимизации
+    private completionFeaturesByNodeType: Map<ts.SyntaxKind, ICompletionFeature[]> | null = null;
+    private diagnosticFeaturesByNodeType: Map<ts.SyntaxKind, IDiagnosticFeature[]> | null = null;
 
     /**
      * Регистрирует новый модуль функциональности.
@@ -63,6 +75,9 @@ export class FeatureManager {
      */
     register(feature: LanguageServerFeature): void {
         this.features.push(feature);
+        // Сбрасываем кэши при регистрации нового модуля
+        this.completionFeaturesByNodeType = null;
+        this.diagnosticFeaturesByNodeType = null;
     }
 
     /**
@@ -76,6 +91,54 @@ export class FeatureManager {
      * Возвращает все зарегистрированные модули, которые реализуют интерфейс IDiagnosticFeature.
      */
     getDiagnosticFeatures(): IDiagnosticFeature[] {
-         return this.features.filter((f): f is IDiagnosticFeature => 'provideDiagnostics' in f);
+        return this.features.filter((f): f is IDiagnosticFeature => 'provideDiagnostics' in f);
+    }
+
+    /**
+     * Группирует модули автодополнения по типам узлов, которые они поддерживают.
+     * @returns Карта "тип узла -> массив модулей автодополнения"
+     */
+    getCompletionFeaturesByNodeType(): Map<ts.SyntaxKind, ICompletionFeature[]> {
+        if (!this.completionFeaturesByNodeType) {
+            this.completionFeaturesByNodeType = new Map<ts.SyntaxKind, ICompletionFeature[]>();
+            const completionFeatures = this.getCompletionFeatures();
+
+            for (const feature of completionFeatures) {
+                const nodeTypes = feature.getSupportedNodeTypes();
+
+                for (const nodeType of nodeTypes) {
+                    if (!this.completionFeaturesByNodeType.has(nodeType)) {
+                        this.completionFeaturesByNodeType.set(nodeType, []);
+                    }
+                    this.completionFeaturesByNodeType.get(nodeType)!.push(feature);
+                }
+            }
+        }
+
+        return this.completionFeaturesByNodeType;
+    }
+
+    /**
+     * Группирует модули диагностики по типам узлов, которые они поддерживают.
+     * @returns Карта "тип узла -> массив модулей диагностики"
+     */
+    getDiagnosticFeaturesByNodeType(): Map<ts.SyntaxKind, IDiagnosticFeature[]> {
+        if (!this.diagnosticFeaturesByNodeType) {
+            this.diagnosticFeaturesByNodeType = new Map<ts.SyntaxKind, IDiagnosticFeature[]>();
+            const diagnosticFeatures = this.getDiagnosticFeatures();
+
+            for (const feature of diagnosticFeatures) {
+                const nodeTypes = feature.getSupportedNodeTypes();
+
+                for (const nodeType of nodeTypes) {
+                    if (!this.diagnosticFeaturesByNodeType.has(nodeType)) {
+                        this.diagnosticFeaturesByNodeType.set(nodeType, []);
+                    }
+                    this.diagnosticFeaturesByNodeType.get(nodeType)!.push(feature);
+                }
+            }
+        }
+
+        return this.diagnosticFeaturesByNodeType;
     }
 }

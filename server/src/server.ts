@@ -53,8 +53,7 @@ connection.onInitialized(() => {
 
 /**
 * Обработчик запроса на автодополнение.
-* Обходит AST и запрашивает автодополнение у всех зарегистрированных модулей ICompletionFeature,
-* которые применимы к текущему узлу и позиции курсора.
+* Использует предварительную фильтрацию модулей по типу узла для оптимизации.
 * @param {TextDocumentPositionParams} textDocumentPosition - Параметры позиции текстового документа.
 * @returns {Promise<CompletionItem[]>} Промис, который разрешается в массив элементов автодополнения.
 */
@@ -74,27 +73,25 @@ connection.onCompletion(
       );
 
       const allCompletions: CompletionItem[] = [];
-      // Получаем только те модули, которые предоставляют автодополнение
-      const completionFeatures = featureManager.getCompletionFeatures();
-
-      // Рекурсивный обход AST документа
+      // Получаем карту "тип узла -> соответствующие модули"
+      const nodeTypeToFeatures = featureManager.getCompletionFeaturesByNodeType();
+      
+      // Рекурсивный обход AST документа с оптимизированной проверкой
       ts.forEachChild(sourceFile, function visit(node) {
-          // Для каждого узла в AST, проверяем все модули автодополнения
-          for (const feature of completionFeatures) {
-              // Если модуль "заинтересован" в этом узле (matches вернул true)
+          const relevantFeatures = nodeTypeToFeatures.get(node.kind) || [];
+          
+          for (const feature of relevantFeatures) {
+              // Дополнительная проверка на соответствие, если требуется
               if (feature.matches(node)) {
-                  // Запрашиваем у модуля элементы автодополнения для этого узла
-                  // Логика проверки позиции курсора относительно узла теперь внутри provideCompletionItems
                   const nodeCompletions = feature.provideCompletionItems(node, textDocumentPosition, document);
-                  // Добавляем полученные элементы в общий список
                   allCompletions.push(...nodeCompletions);
               }
           }
+          
           // Продолжаем обход дочерних узлов
           ts.forEachChild(node, visit);
       });
 
-      // Возвращаем все собранные элементы автодополнения
       return allCompletions;
   }
 );
@@ -124,13 +121,12 @@ documents.onDidOpen(open => {
 
 /**
 * Выполняет валидацию текстового документа.
-* Обходит AST и запрашивает диагностики у всех зарегистрированных модулей IDiagnosticFeature,
-* которые применимы к текущему узлу.
+* Использует предварительную фильтрацию модулей по типу узла для оптимизации.
 * @param {TextDocument} textDocument - Текстовый документ для валидации.
 */
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
   const text = textDocument.getText();
-  const diagnostics: Diagnostic[] = []; // Массив для сбора всех диагностик от всех модулей
+  const diagnostics: Diagnostic[] = [];
 
   const sourceFile = ts.createSourceFile(
       textDocument.uri,
@@ -139,25 +135,23 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
       true
   );
 
-  // Получаем только те модули, которые предоставляют диагностики
-  const diagnosticFeatures = featureManager.getDiagnosticFeatures();
-
+  // Получаем карту "тип узла -> соответствующие модули"
+  const nodeTypeToFeatures = featureManager.getDiagnosticFeaturesByNodeType();
+  
   // Рекурсивный обход AST документа
   ts.forEachChild(sourceFile, function visit(node) {
-      // Для каждого узла в AST, проверяем все модули диагностик
-      for (const feature of diagnosticFeatures) {
-          // Если модуль "заинтересован" в этом узле (matches вернул true)
+      const relevantFeatures = nodeTypeToFeatures.get(node.kind) || [];
+      
+      for (const feature of relevantFeatures) {
           if (feature.matches(node)) {
-              // Запрашиваем у модуля диагностики для этого узла
-              // Модуль сам добавит диагностики в переданный массив `diagnostics`
               feature.provideDiagnostics(node, textDocument, diagnostics);
           }
       }
+      
       // Продолжаем обход дочерних узлов
       ts.forEachChild(node, visit);
   });
 
-  // Отправка всех собранных диагностических сообщений клиенту
   connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
 }
 
@@ -165,4 +159,4 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 documents.listen(connection);
 
 // Прослушивание входящих сообщений от клиента.
-connection.listen(); // Запуск цикла сервера
+connection.listen();

@@ -28,6 +28,16 @@ import {
 export class AjaxFeature implements ICompletionFeature, IDiagnosticFeature {
 
     /**
+     * Возвращает типы узлов AST, на которые реагирует данный модуль.
+     * Используется для предварительной фильтрации узлов AST перед детальной проверкой.
+     * @returns Массив типов узлов (ts.SyntaxKind).
+     */
+    getSupportedNodeTypes(): ts.SyntaxKind[] {
+        // AjaxFeature работает только с вызовами функций (CallExpression)
+        return [ts.SyntaxKind.CallExpression];
+    }
+
+    /**
      * Проверяет, является ли данный узел AST вызовом $.ajax или jQuery.ajax
      * и имеет ли он первым аргументом объектный литерал конфигурации.
      * Эта логика взята из исходного server.ts.
