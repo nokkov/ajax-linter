@@ -21,29 +21,13 @@ import {
 } from '../utils/utils';
 
 
-/**
- * Модуль функциональности, предоставляющий автодополнение и диагностики для вызовов $.ajax
- * Реализует интерфейсы ICompletionFeature и IDiagnosticFeature.
- */
 export class AjaxFeature implements ICompletionFeature, IDiagnosticFeature {
 
-    /**
-     * Возвращает типы узлов AST, на которые реагирует данный модуль.
-     * Используется для предварительной фильтрации узлов AST перед детальной проверкой.
-     * @returns Массив типов узлов (ts.SyntaxKind).
-     */
     getSupportedNodeTypes(): ts.SyntaxKind[] {
         // AjaxFeature работает только с вызовами функций (CallExpression)
         return [ts.SyntaxKind.CallExpression];
     }
 
-    /**
-     * Проверяет, является ли данный узел AST вызовом $.ajax или jQuery.ajax
-     * и имеет ли он первым аргументом объектный литерал конфигурации.
-     * Эта логика взята из исходного server.ts.
-     * @param node Узел AST для проверки.
-     * @returns true, если узел соответствует вызову $.ajax/jQuery.ajax с объектом конфигурации.
-     */
     matches(node: ts.Node): boolean {
         if (ts.isCallExpression(node)) {
             const call = node as ts.CallExpression;
@@ -63,14 +47,6 @@ export class AjaxFeature implements ICompletionFeature, IDiagnosticFeature {
         return false;
     }
 
-    /**
-     * Предоставляет элементы автодополнения для объекта конфигурации $.ajax.
-     * Логика полностью перенесена из исходного completion.ts -> getAjaxCompletionItems.
-     * @param node Узел AST, соответствующий вызову $.ajax/jQuery.ajax.
-     * @param textDocumentPosition Параметры позиции курсора.
-     * @param document Текстовый документ.
-     * @returns Массив элементов автодополнения.
-     */
     provideCompletionItems(node: ts.Node, textDocumentPosition: TextDocumentPositionParams, document: TextDocument): CompletionItem[] {
         // Поскольку matches(node) уже вернул true, мы знаем, что node - это CallExpression
         const call = node as ts.CallExpression;
@@ -266,13 +242,6 @@ export class AjaxFeature implements ICompletionFeature, IDiagnosticFeature {
         return completions;
     }
 
-    /**
-     * Предоставляет диагностические сообщения для объекта конфигурации $.ajax.
-     * Логика полностью перенесена из исходного diagnostics.ts -> processAjaxConfigForDiagnostics.
-     * @param node Узел AST, соответствующий вызову $.ajax/jQuery.ajax.
-     * @param textDocument Текстовый документ.
-     * @param diagnostics Массив, в который должны быть добавлены диагностики.
-     */
     provideDiagnostics(node: ts.Node, textDocument: TextDocument, diagnostics: Diagnostic[]): void {
         const call = node as ts.CallExpression;
         const configObject = call.arguments[0] as ts.ObjectLiteralExpression;
